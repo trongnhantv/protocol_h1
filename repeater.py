@@ -41,12 +41,8 @@ from optparse import OptionParser
 
 import dpkt
 
-
-pkt_count = 0
-first_timestamp = 0.0
-last_timestamp = 0.0
-
-DEBUG = True
+drop_count=0
+DEBUG = False
 
 
 def get_packet(g):
@@ -59,7 +55,9 @@ def get_packet(g):
 
 
 def run_output_interface(iface_num, q, trans_delay):
-
+  #iface 1 cannot output
+  if (iface_num ==1):
+      exit(1)
   filename = "output-%d.pcap" % iface_num
   f = open(filename, "wb")
   writer = dpkt.pcap.Writer(f)
@@ -69,27 +67,25 @@ def run_output_interface(iface_num, q, trans_delay):
       writer.close()
       f.close()
       break
-    print "called"
     ts, pkt = p
     time.sleep(trans_delay)
     writer.writepkt(pkt, ts+trans_delay)
 
 
 def callback(ts, pkt, iface, queues):
-  global pkt_count
-  global first_timestamp
-  global last_timestamp
-  global DEBUG
-  if first_timestamp == 0.0:
-    first_timestamp = ts
-  last_timestamp = ts
+  global drop_count
 
-  pkt_count += 1 
-  DEBUG = True
-  if DEBUG:
-    print "Got a packet at", ts,  "(count = %d)" % pkt_count, " interface %d" %iface
-  exit (1)
+  # forward message from interface 1 to interface 2
+  iface = 2
 
+
+  print "Writing packet to interface %d" % iface
+
+  q = queues[iface]
+  try:
+    q.put( (ts,pkt) )
+  except QueueFullException:
+    drop_count += 1
 
 if __name__ == "__main__":
 
@@ -98,7 +94,7 @@ if __name__ == "__main__":
 
   # Parse command-line arguments
   parser = OptionParser()
-  parser.add_option("-n", "--num-interfaces", dest="n", help="number of interfaces", default="4")
+  parser.add_option("-n", "--num-interfaces", dest="n", help="number of interfaces", default="2")# HAS ONLY ONE INPUT AND ONE OUTPUT INTERFACE
   parser.add_option("-t", "--table-size", dest="t", help="size of MAC address table", default="10")
   parser.add_option("-d", "--debug", dest="debug", action="store_true", help="turn on debugging output", default=False)
   
@@ -126,12 +122,15 @@ if __name__ == "__main__":
     output_queues[i] = Queue(10)
     output_interfaces[i] = Process(target=run_output_interface, args=(i, output_queues[i], transmission_delay))
     output_interfaces[i].start()
-  time.sleep(1000)
+
   # h is a heap-based priority queue containing the next available packet from each interface.
   h = []
   # We start out by loading the first packet from each interface into h.
   # We always use the heapq functions to access h; this way, we preserve the heap invariant.
   for iface in generators.keys():
+    #not allow interface 2 to receive input
+    if iface==2:
+        continue
     p = get_packet(generators[iface])
     if p is not None:
       ts, pkt = p
@@ -162,7 +161,7 @@ if __name__ == "__main__":
 
     # Call our callback function to handle the input packet
     callback(ts, pkt, iface, output_queues)
-
+    #get the next packet
     p = get_packet(generators[iface])
     if p is not None:
       # The individual input generators provide us with timestamps and packet contents
@@ -185,10 +184,4 @@ if __name__ == "__main__":
   for i in output_interfaces.keys():
     output_interfaces[i].join()
 
-  if True:
-  #if DEBUG:
-    # Print some simple summary statistics about the traces we processed
-    total_time = last_timestamp - first_timestamp
-    print "Pcap file(s) contain %d packets over %4.2f seconds" % (pkt_count, total_time)
-
-
+  print "%d packets has been dropped" %drop_count

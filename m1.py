@@ -42,11 +42,7 @@ from optparse import OptionParser
 import dpkt
 
 
-pkt_count = 0
-first_timestamp = 0.0
-last_timestamp = 0.0
-
-DEBUG = True
+DEBUG = False
 
 
 def get_packet(g):
@@ -59,7 +55,6 @@ def get_packet(g):
 
 
 def run_output_interface(iface_num, q, trans_delay):
-
   filename = "output-%d.pcap" % iface_num
   f = open(filename, "wb")
   writer = dpkt.pcap.Writer(f)
@@ -69,26 +64,15 @@ def run_output_interface(iface_num, q, trans_delay):
       writer.close()
       f.close()
       break
-    print "called"
     ts, pkt = p
     time.sleep(trans_delay)
     writer.writepkt(pkt, ts+trans_delay)
 
 
 def callback(ts, pkt, iface, queues):
-  global pkt_count
-  global first_timestamp
-  global last_timestamp
-  global DEBUG
-  if first_timestamp == 0.0:
-    first_timestamp = ts
-  last_timestamp = ts
-
-  pkt_count += 1 
-  DEBUG = True
-  if DEBUG:
-    print "Got a packet at", ts,  "(count = %d)" % pkt_count, " interface %d" %iface
-  exit (1)
+  #print timestamp
+  print "TS: %.3f"%ts +"   "+"Length: "+str(len(pkt))
+  pass    # 'pass' is Python for 'do nothing'
 
 
 if __name__ == "__main__":
@@ -126,7 +110,7 @@ if __name__ == "__main__":
     output_queues[i] = Queue(10)
     output_interfaces[i] = Process(target=run_output_interface, args=(i, output_queues[i], transmission_delay))
     output_interfaces[i].start()
-  time.sleep(1000)
+
   # h is a heap-based priority queue containing the next available packet from each interface.
   h = []
   # We start out by loading the first packet from each interface into h.
@@ -184,11 +168,5 @@ if __name__ == "__main__":
   # And we wait for the output interfaces to finish writing their packets to their pcap files
   for i in output_interfaces.keys():
     output_interfaces[i].join()
-
-  if True:
-  #if DEBUG:
-    # Print some simple summary statistics about the traces we processed
-    total_time = last_timestamp - first_timestamp
-    print "Pcap file(s) contain %d packets over %4.2f seconds" % (pkt_count, total_time)
 
 
